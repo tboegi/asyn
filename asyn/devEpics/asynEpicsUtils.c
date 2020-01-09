@@ -86,10 +86,9 @@ static asynStatus parseLink(asynUser *pasynUser, DBLINK *plink,
         if(*p) {
             p = skipWhite(p,0);
             if(*p) {
-                len = strlen(p);
-                *userParam = mallocMustSucceed(len+1,"asynEpicsUtils:parseLink");
-                strncpy(*userParam,p,len);
-                (*userParam)[len] = 0;
+                len = 1 + strlen(p); /* include trailing '\0' */
+                *userParam = mallocMustSucceed(len,"asynEpicsUtils:parseLink");
+                memcpy(*userParam,p,len);
             }
         }
         break;
@@ -139,10 +138,9 @@ userParams:
         if(*p) {
             p = skipWhite(p,0);
             if(userParam&& *p) {
-                len = strlen(p);
-                *userParam = mallocMustSucceed(len+1,"asynEpicsUtils:parseLink");
-                strncpy(*userParam,p,len);
-                (*userParam)[len] = 0;
+                len = 1 + strlen(p); /* include trailing '\0' */
+                *userParam = mallocMustSucceed(len,"asynEpicsUtils:parseLink");
+                memcpy(*userParam,p,len);
             }
         }
         break;
@@ -221,10 +219,9 @@ userParams:
     if(*p) {
         p = skipWhite(p,0);
         if(userParam&& *p) {
-            len = strlen(p);
-            *userParam = mallocMustSucceed(len+1,"asynEpicsUtils:parseLink");
-            strncpy(*userParam,p,len);
-            (*userParam)[len] = 0;
+            len = 1 + strlen(p); /* include trailing '\0' */
+            *userParam = mallocMustSucceed(len,"asynEpicsUtils:parseLink");
+            memcpy(*userParam,p,len);
         }
     }
     return(asynSuccess);
