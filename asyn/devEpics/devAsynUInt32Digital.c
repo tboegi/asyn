@@ -196,6 +196,10 @@ static long initCommon(dbCommon *pr, DBLINK *plink,
     /* Parse the link to get addr and port */
     status = pasynEpicsUtils->parseLinkMask(pasynUser, plink,
                 &pPvt->portName, &pPvt->addr, &pPvt->mask,&pPvt->userParam);
+
+    fprintf(stdout, "%s/%s:%d portName=%s addr=%d, mask=0x%X status=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pPvt->portName, pPvt->addr, pPvt->mask, (int)status);
     if (status != asynSuccess) {
         printf("%s %s::%s %s\n",
                      pr->name, driverName, functionName, pasynUser->errorMessage);
@@ -309,8 +313,14 @@ static long initCommon(dbCommon *pr, DBLINK *plink,
             callbackSetUser(pPvt, &pPvt->outputCallback);
         }
     }
+    printf("%s/%s:%d %s %s good\n",
+           __FILE__, __FUNCTION__, __LINE__,
+           pr->name, driverName);
     return INIT_OK;
 bad:
+    printf("%s/%s:%d %s %s bad\n",
+           __FILE__, __FUNCTION__, __LINE__,
+           pr->name, driverName);
     recGblSetSevr(pr,LINK_ALARM,INVALID_ALARM);
     pr->pact=1;
     return INIT_ERROR;
@@ -716,17 +726,25 @@ static long initBo(boRecord *pr)
 {
     devPvt *pPvt;
     int status;
-    epicsUInt32 value;
+    epicsUInt32 value = 0xFFFFFFFF;
 
     status = initCommon((dbCommon *)pr,&pr->out,
         processCallbackOutput,interruptCallbackOutput, interruptCallbackEnumBo,
         2, (char*)&pr->znam, NULL, &pr->zsv);
+    fprintf(stdout, "%s/%s:%d status=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            (int)status);
     if (status != INIT_OK) return status;
+
     pPvt = pr->dpvt;
     pr->mask = pPvt->mask;
     /* Read the current value from the device */
     status = pasynUInt32DigitalSyncIO->read(pPvt->pasynUserSync,
                       &value, pPvt->mask,pPvt->pasynUser->timeout);
+
+    fprintf(stdout, "%s/%s:%d status=%d value=0x%X\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            (int)status, value);
     pasynUInt32DigitalSyncIO->disconnect(pPvt->pasynUserSync);
     if (status == asynSuccess) {
         pr->rval = value;

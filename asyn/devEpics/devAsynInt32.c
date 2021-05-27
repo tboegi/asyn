@@ -607,6 +607,9 @@ static void interruptCallbackOutput(void *drvPvt, asynUser *pasynUser,
         value &= pPvt->mask;
         if (pPvt->bipolar && (value & pPvt->signBit)) value |= ~pPvt->mask;
     }
+    fprintf(stdout, "%s/%s:%d %s %s::%s new value=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name, driverName, functionName, value);
     asynPrint(pPvt->pasynUser, ASYN_TRACEIO_DEVICE,
         "%s %s::%s new value=%d\n",
         pr->name, driverName, functionName, value);
@@ -1191,16 +1194,22 @@ static long initBo(boRecord *pr)
 {
     devPvt *pPvt;
     int status;
-    epicsInt32 value;
+    epicsInt32 value = 0xFFFFFFFF;
 
     status = initCommon((dbCommon *)pr,&pr->out,
         processCallbackOutput,interruptCallbackOutput, interruptCallbackEnumBo,
         2, (char*)&pr->znam, NULL, &pr->zsv);
+    fprintf(stdout, "%s/%s:%d %s status=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name, (int)status);
     if (status != INIT_OK) return status;
     pPvt = pr->dpvt;
     /* Read the current value from the device */
     status = pasynInt32SyncIO->read(pPvt->pasynUserSync,
                       &value, pPvt->pasynUser->timeout);
+    fprintf(stdout, "%s/%s:%d  %s status=%d value=0x%X\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name, (int)status, value);
     if (status == asynSuccess) {
         pr->rval = value;
         return INIT_OK;
