@@ -1221,10 +1221,16 @@ static long processBo(boRecord *pr)
 {
     devPvt *pPvt = (devPvt *)pr->dpvt;
     int status;
+    fprintf(stdout, "%s/%s:%d %s pPvt->newOutputCallbackValue=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name, pPvt->newOutputCallbackValue);
 
     epicsMutexLock(pPvt->devPvtLock);
     if(pPvt->newOutputCallbackValue && getCallbackValue(pPvt)) {
         /* We got a callback from the driver */
+      fprintf(stdout, "%s/%s:%d %s pPvt->result.status=%d\n",
+	      __FILE__, __FUNCTION__, __LINE__,
+	      pr->name, pPvt->result.status);
         if (pPvt->result.status == asynSuccess) {
             pr->rval = pPvt->result.value;
             pr->val = (pr->rval) ? 1 : 0;
