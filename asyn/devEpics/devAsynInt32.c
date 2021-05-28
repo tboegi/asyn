@@ -1234,7 +1234,11 @@ static long processBo(boRecord *pr)
         if (pPvt->result.status == asynSuccess) {
             pr->rval = pPvt->result.value;
             pr->val = (pr->rval) ? 1 : 0;
-            pr->udf = 0;
+            if (pr->udf) {
+                pr->udf = 0;
+                pr->nsta = 0;
+                pr->nsev = 0;
+            }
         }
     } else if(pr->pact == 0) {
         pPvt->result.value = pr->rval;
@@ -1249,10 +1253,25 @@ static long processBo(boRecord *pr)
         epicsMutexLock(pPvt->devPvtLock);
         reportQueueRequestStatus(pPvt, status);
     }
+    fprintf(stdout, "%s/%s:%d %s stat=%d sevr=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name,
+            (int)pr->stat, (int)pr->sevr);
+
     pasynEpicsUtils->asynStatusToEpicsAlarm(pPvt->result.status,
                                             WRITE_ALARM, &pPvt->result.alarmStatus,
                                             INVALID_ALARM, &pPvt->result.alarmSeverity);
+    fprintf(stdout, "%s/%s:%d %s pPvt->result.alarmStatus=%d  pPvt->result.alarmSeverity=%d stat=%d nsta=%d sevr=%d nsev=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name,
+            (int)pPvt->result.alarmStatus, (int)pPvt->result.alarmSeverity,
+            (int)pr->stat, (int)pr->nsta,  (int)pr->sevr, (int)pr->nsev);
     (void)recGblSetSevr(pr, pPvt->result.alarmStatus, pPvt->result.alarmSeverity);
+    fprintf(stdout, "%s/%s:%d %s pPvt->result.alarmStatus=%d  pPvt->result.alarmSeverity=%d stat=%d nsta=%d sevr=%d nsev=%d\n",
+            __FILE__, __FUNCTION__, __LINE__,
+            pr->name,
+            (int)pPvt->result.alarmStatus, (int)pPvt->result.alarmSeverity,
+            (int)pr->stat, (int)pr->nsta,  (int)pr->sevr, (int)pr->nsev);
     if (pPvt->numDeferredOutputCallbacks > 0) {
         callbackRequest(&pPvt->outputCallback);
         pPvt->numDeferredOutputCallbacks--;
