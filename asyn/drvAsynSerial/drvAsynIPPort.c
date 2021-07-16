@@ -34,13 +34,19 @@
  * the code as of version 1.29 should be used as the starting point.
  */
 
+#define EPICS_USE_OSISOCK46
+
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <osiUnistd.h>
+#ifdef EPICS_USE_OSISOCK46
+#include <osiSock46.h>
+#else
 #include <osiSock.h>
+#endif
 #include <cantProceed.h>
 #include <errlog.h>
 #include <iocsh.h>
@@ -116,13 +122,22 @@ typedef struct {
     unsigned long      nRead;
     unsigned long      nWritten;
     union {
-      osiSockAddr        oa;
+#ifdef EPICS_USE_OSISOCK46
+    osiSockAddr46      oa;
+#else
+    osiSockAddr        oa;
+#endif
 #if defined(HAS_AF_UNIX)
       struct sockaddr_un ua;
 #endif
     }                  farAddr;
-    size_t             farAddrSize;
+#ifdef EPICS_USE_OSISOCK46
+     unsigned short     port;
+     unsigned short     localPort;
+#else
     osiSockAddr        localAddr;
+#endif
+    size_t             farAddrSize;
     size_t             localAddrSize;
     asynInterface      common;
     asynInterface      option;
@@ -323,13 +338,22 @@ static int parseHostInfo(ttyController_t *tty, const char* hostInfo)
         char protocol[6];
         char *secondColon, *blank;
         protocol[0] = '\0';
-        if ((cp = strchr(tty->IPDeviceName, ':')) == NULL) {
+        cp = &tty->IPDeviceName[0];
+        if ( *cp == '[') {
+            /* Jump of literal IPv6 adsresses enclosed in [] before searching
+               for ':' */
+            char *closing_bracket = strchr(cp, ']');
+            if (closing_bracket) cp = closing_bracket + 1;
+        }
+        if ((cp = strchr(cp, ':')) == NULL) {
             printf("%s: \"%s\" is not of the form \"<host>:<port>[:localPort] [protocol]\"\n",
                 functionName, tty->IPDeviceName);
             return -1;
         }
         *cp = '\0';
         tty->IPHostName = epicsStrDup(tty->IPDeviceName);
+        printf("tty->IPHostName=%s\n", tty->IPHostName);
+
         *cp = ':';
         if (sscanf(cp, ":%d", &port) < 1) {
             printf("%s: \"%s\" is not of the form \"<host>:<port>[:localPort] [protocol]\"\n",
@@ -342,16 +366,27 @@ static int parseHostInfo(ttyController_t *tty, const char* hostInfo)
                     functionName, tty->IPDeviceName);
                 return -1;
             }
+#ifdef EPICS_USE_OSISOCK46
+            tty->localPort = (unsigned short)localPort;
+#else
             tty->localAddr.ia.sin_family = AF_INET;
             tty->localAddr.ia.sin_port = htons(localPort);
             tty->localAddrSize = sizeof(tty->localAddr.ia);
+#endif
         }
         if ((blank = strchr(cp, ' ')) != NULL) {
             sscanf(blank+1, "%5s", protocol);
         }
+#ifdef EPICS_USE_OSISOCK46
+        tty->port = (unsigned short)port;
+        tty->farAddr.oa.in6.sin6_family = AF_INET6;
+        tty->farAddr.oa.in6.sin6_port = htons(port);
+        tty->farAddrSize = sizeof(tty->farAddr.oa);
+#else
         tty->farAddr.oa.ia.sin_family = AF_INET;
         tty->farAddr.oa.ia.sin_port = htons(port);
         tty->farAddrSize = sizeof(tty->farAddr.oa.ia);
+#endif
         tty->flags |= FLAG_NEED_LOOKUP;
         if ((protocol[0] ==  '\0')
          || (epicsStrCaseCmp(protocol, "tcp") == 0)) {
@@ -410,8 +445,9 @@ connectIt(void *drvPvt, asynUser *pasynUser)
     ttyController_t *tty = (ttyController_t *)drvPvt;
     SOCKET fd;
     int i;
+#ifndef EPICS_USE_OSISOCK46
     int sockOpt;
-
+#endif
     /*
      * Sanity check
      */
@@ -436,6 +472,32 @@ connectIt(void *drvPvt, asynUser *pasynUser)
         fd = pasynUser->reason;
     } else {
 
+
+#ifdef EPICS_USE_OSISOCK46
+        {
+            int flags = 0;
+            memset(&tty->farAddr, 0, sizeof(tty->farAddr));
+            flags |= EPICSSOCKET_PRINT_DEBUG_FLAG;
+            if (tty->flags & FLAG_BROADCAST) flags |= EPICSSOCKETENABLEBROADCASTS_FLAG;
+            if (tty->flags & FLAG_SO_REUSEPORT) flags |= EPICSSOCKETENABLEADDRESSREUSE_FLAG;
+            fd = epicsSocketCreateBindConnect46(AF_INET6,
+                                                tty->socketType,
+                                                0,
+                                                (tty->flags & FLAG_NEED_LOOKUP) ? tty->IPHostName : NULL,
+                                                tty->port,
+                                                tty->localPort,
+                                                flags,
+                                                pasynUser->errorMessage,
+                                                pasynUser->errorMessageSize);
+            if (fd == INVALID_SOCKET) {
+              return asynError;
+            }
+            //status = getsocketname (tty->farAddr. accepted_socket, &addr.sa, &saddr_length );
+            tty->farAddr.oa.sa.sa_family = AF_INET; /* See TCP_NODELAY below */
+            tty->fd = fd;
+            //return asynSuccess;
+        }
+#else
         /*
          * Create the socket
          */
@@ -521,6 +583,7 @@ connectIt(void *drvPvt, asynUser *pasynUser)
                 return asynError;
             }
         }
+#endif
     }
     i = 1;
     if ((tty->socketType == SOCK_STREAM)
@@ -774,13 +837,23 @@ static asynStatus readIt(void *drvPvt, asynUser *pasynUser,
 #endif
     if (tty->socketType == SOCK_DGRAM) {
         /* We use recvfrom() for SOCK_DRAM so we can print the source address with ASYN_TRACEIO_DRIVER */
+#ifdef EPICS_USE_OSISOCK46
+        osiSockAddr46 oa;
+        socklen_t addrlen = sizeof(oa.in6); /* TODO: Check if we need to distinguish AF_INET/A_INET6 */
+        thisRead = recvfrom(tty->fd, data, (int)maxchars, 0, &oa.sa, &addrlen);
+#else
         osiSockAddr oa;
         unsigned int addrlen = sizeof(oa.ia);
         thisRead = recvfrom(tty->fd, data, (int)maxchars, 0, &oa.sa, &addrlen);
+#endif
         if (thisRead >= 0) {
             if (pasynTrace->getTraceMask(pasynUser) & ASYN_TRACEIO_DRIVER) {
-                char inetBuff[32];
+                char inetBuff[64];
+#ifdef EPICS_USE_OSISOCK46
+                ipAddrToDottedIP64(&oa, inetBuff, sizeof(inetBuff));
+#else
                 ipAddrToDottedIP(&oa.ia, inetBuff, sizeof(inetBuff));
+#endif
                 asynPrintIO(pasynUser, ASYN_TRACEIO_DRIVER, data, thisRead,
                           "%s (from %s) read %d\n",
                           tty->IPDeviceName, inetBuff, thisRead);
